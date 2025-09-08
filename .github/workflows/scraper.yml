@@ -1,34 +1,35 @@
-name: Update NGC Population
+name: Update NGC POPULATION
 
 on:
   schedule:
-    - cron: "0 */24 * * *"   # every 24 hours
-  workflow_dispatch:         # manual trigger
+    - cron: "0 */24 * * *"  # every 24 hours
+  workflow_dispatch:        # manual run option
+
+permissions:
+  contents: write  # ✅ allow committing back to repo
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
 
-    - name: Install dependencies
-      run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-    - name: Run scraper
-      run: python ngcpop.py
+      - name: Run scraper
+        run: python ngcpop.py
 
-    - name: Commit and push JSON
-      run: |
-        git config user.name "github-actions"
-        git config user.email "github-actions@github.com"
-        git add ngc_population.json
-        git commit -m "Update population data [skip ci]" || echo "No changes to commit"
-        git push
-
+      - name: Commit and push results
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add ngc_population.json
+          git commit -m "Update population data [skip ci]" || echo "No changes to commit"
+          git push
