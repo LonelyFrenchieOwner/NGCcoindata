@@ -1,0 +1,98 @@
+import requests
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+GROUPS_URL = "https://production.api.aws.ccg-ops.com/api/coins/research/groups/"
+POP_URL = "https://production.api.aws.ccg-ops.com/api/coins/research/population"
+
+
+def fetch_json(url):
+    r = requests.get(url)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_all_group_ids(subcategory_id=187):
+    """Fetch all researchGroupIDs from /groups/ (paged)."""
+    page, ids = 1, []
+    while True:
+        url = f"{GROUPS_URL}?researchSubcategoryID={subcategory_id}&page={page}&keywords=&languageID="
+        data = fetch_json(url)
+        items = data.get("Items", [])
+        if not items:
+            break
+        ids.extend([item["researchGroupID"] for item in items])
+        if not data.get("ShowNextPage"):
+            break
+        page += 1
+    return ids
+
+
+def get_top_two_for_group(group_id, designation="PF"):
+    """Fetch all pages for a group and return top 2 grades with counts for each coin."""
+    results, page = [], 1
+    while True:
+        url = f"{POP_URL}/{designation}/?researchGroupID={group_id}&page={page}&keywords=&populationID="
+        data = fetch_json(url)
+        items = data.get("Items", [])
+        if not items:
+            break
+
+        for coin in items:
+            display_name = coin.get("displayName", f"Group {group_id}")
+            grade_counts = []
+            for key, value in coin.items():
+                if key.startswith("population_") and isinstance(value, int) and value > 0:
+                    try:
+                        grade = int(key.split("_")[1])  # e.g. population_69 → 69
+                        grade_counts.append((grade, value))
+                    except ValueError:
+                        continue
+            if grade_counts:
+                grade_counts.sort(key=lambda x: x[0], reverse=True)
+                top_two = grade_counts[:2]
+                results.append({
+                    "GroupID": group_id,
+                    "Coin Name": display_name,
+                    "Designation": designation,
+                    "TopGrade1": f"{designation}{top_two[0][0]}",
+                    "Count1": top_two[0][1],
+                    "TopGrade2": f"{designation}{top_two[1][0]}" if len(top_two) > 1 else "",
+                    "Count2": top_two[1][1] if len(top_two) > 1 else ""
+                })
+
+        if not data.get("ShowNextPage"):
+            break
+        page += 1
+    return results
+
+
+def main():
+    group_ids = get_all_group_ids(subcategory_id=187)
+    print(f"Found {len(group_ids)} group IDs")
+
+    all_rows = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {}
+        for gid in group_ids:
+            futures[executor.submit(get_top_two_for_group, gid, "PF")] = (gid, "PF")
+            futures[executor.submit(get_top_two_for_group, gid, "MS")] = (gid, "MS")
+
+        for i, future in enumerate(as_completed(futures), start=1):
+            gid, des = futures[future]
+            try:
+                coin_results = future.result()
+                print(f"[{i}/{len(futures)}] Done group {gid} ({des}, {len(coin_results)} coins)")
+                all_rows.extend(coin_results)
+            except Exception as e:
+                print(f"❌ Error fetching {gid} ({des}): {e}")
+
+    # Write JSON (this file will be committed to the repo by GitHub Actions)
+    with open("ngc_population.json", "w", encoding="utf-8") as f:
+        json.dump(all_rows, f, indent=2, ensure_ascii=False)
+
+    print(f"✅ Saved ngc_population.json with {len(all_rows)} rows")
+
+
+if __name__ == "__main__":
+    main()
