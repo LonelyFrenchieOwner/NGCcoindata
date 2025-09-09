@@ -28,27 +28,30 @@ def get_all_group_ids(subcategory_id=187):
     return ids
 
 
-def map_grade(number: int, designation: str) -> str:
-    """Map numeric grade to proper prefix (MS, AU, XF, etc)."""
-    if 60 <= number <= 70:
-        return f"MS{number}"
-    elif 50 <= number <= 59:
-        return f"AU{number}"
-    elif 40 <= number <= 49:
-        return f"XF{number}"
-    elif 20 <= number <= 39:
-        return f"VF{number}"
-    elif 12 <= number <= 19:
-        return f"F{number}"
-    elif 6 <= number <= 11:
-        return f"G{number}"
-    elif 3 <= number <= 5:
-        return f"AG{number}"
-    elif 1 <= number <= 2:
-        return f"PO{number}"
+def map_grade(designation: str, grade: int) -> str:
+    """Map numeric grade to proper prefix (MS, PF, AU, XF, VF, F, VG, G, AG, FR, PO)."""
+    if grade >= 60:
+        return f"{designation}{grade}"
+    elif grade >= 50:
+        return f"AU{grade}"
+    elif grade >= 40:
+        return f"XF{grade}"
+    elif grade >= 20:
+        return f"VF{grade}"
+    elif grade >= 12:
+        return f"F{grade}"
+    elif grade >= 8:
+        return f"VG{grade}"
+    elif grade >= 4:
+        return f"G{grade}"
+    elif grade == 3:
+        return "AG3"
+    elif grade == 2:
+        return "FR2"
+    elif grade == 1:
+        return "PO1"
     else:
-        # fallback: keep whatever designation (PF, MS) with the number
-        return f"{designation}{number}"
+        return f"{designation}{grade}"  # fallback
 
 
 def get_grades_for_group(group_id, designation="PF"):
@@ -68,12 +71,12 @@ def get_grades_for_group(group_id, designation="PF"):
                 if key.startswith("population_") and isinstance(value, int) and value > 0:
                     try:
                         grade = int(key.split("_")[1])  # e.g. population_69 → 69
-                        grade_label = map_grade(grade, designation)
+                        grade_label = map_grade(designation, grade)  # ✅ FIXED order
                         grade_counts.append((grade_label, value))
                     except ValueError:
                         continue
             if grade_counts:
-                # Sort by grade number (descending)
+                # Sort by numeric grade (descending)
                 grade_counts.sort(key=lambda x: int("".join([c for c in x[0] if c.isdigit()])), reverse=True)
                 results.append({
                     "GroupID": group_id,
