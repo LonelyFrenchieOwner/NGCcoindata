@@ -50,16 +50,16 @@ def get_top_two_for_group(group_id, designation="PF"):
                         continue
             if grade_counts:
                 grade_counts.sort(key=lambda x: x[0], reverse=True)
-                top_two = grade_counts[:2]
                 results.append({
                     "GroupID": group_id,
                     "Coin Name": display_name,
                     "Designation": designation,
-                    "TopGrade1": f"{designation}{top_two[0][0]}",
-                    "Count1": top_two[0][1],
-                    "TopGrade2": f"{designation}{top_two[1][0]}" if len(top_two) > 1 else "",
-                    "Count2": top_two[1][1] if len(top_two) > 1 else ""
+                    "Grades": [
+                        {"Grade": f"{designation}{g}", "Count": c}
+                        for g, c in grade_counts
+                    ]
                 })
+
 
         if not data.get("ShowNextPage"):
             break
