@@ -1,5 +1,6 @@
 import requests
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 GROUPS_URL = "https://production.api.aws.ccg-ops.com/api/coins/research/groups/"
@@ -54,6 +55,14 @@ def map_grade(designation: str, grade: int) -> str:
         return f"{designation}{grade}"  # fallback
 
 
+# population_66 / population_66Plus / population_66Star / population_66PlusStar
+GRADE_KEY_RE = re.compile(r"^population_(\d+)(Plus)?(Star)?$")
+# population_UNC_Details, population_AU_Details, ... (details-graded coins)
+DETAILS_KEY_RE = re.compile(r"^population_(UNC|AU|XF|VF|F|VG|G|AG|FAIR|POOR)_Details$")
+# best-preserved details first; all details sort below every numeric grade
+DETAILS_ORDER = ["UNC", "AU", "XF", "VF", "F", "VG", "G", "AG", "FAIR", "POOR"]
+
+
 def get_grades_for_group(group_id, designation="PF"):
     """Fetch all pages for a group and return ALL grades with counts for each coin."""
     results, page = [], 1
@@ -66,23 +75,36 @@ def get_grades_for_group(group_id, designation="PF"):
 
         for coin in items:
             display_name = coin.get("displayName", f"Group {group_id}")
+            # (label, count, sort score) — score ranks 66+★ > 66+ > 66★ > 66,
+            # with details grades below the whole numeric scale
             grade_counts = []
             for key, value in coin.items():
-                if key.startswith("population_") and isinstance(value, int) and value > 0:
-                    try:
-                        grade = int(key.split("_")[1])  # e.g. population_69 → 69
-                        grade_label = map_grade(designation, grade)  # ✅ FIXED order
-                        grade_counts.append((grade_label, value))
-                    except ValueError:
-                        continue
+                if not isinstance(value, int) or value <= 0:
+                    continue
+                m = GRADE_KEY_RE.match(key)
+                if m:
+                    grade = int(m.group(1))
+                    label = map_grade(designation, grade)
+                    if m.group(2):
+                        label += "+"
+                    if m.group(3):
+                        label += "★"
+                    score = grade * 100 + (50 if m.group(2) else 0) + (10 if m.group(3) else 0)
+                    grade_counts.append((label, value, score))
+                    continue
+                d = DETAILS_KEY_RE.match(key)
+                if d:
+                    label = f"{d.group(1)} DETAILS"
+                    score = -1 - DETAILS_ORDER.index(d.group(1))
+                    grade_counts.append((label, value, score))
+                # anything else (population_Total, unknown keys) is intentionally skipped
             if grade_counts:
-                # Sort by numeric grade (descending)
-                grade_counts.sort(key=lambda x: int("".join([c for c in x[0] if c.isdigit()])), reverse=True)
+                grade_counts.sort(key=lambda x: x[2], reverse=True)
                 results.append({
                     "GroupID": group_id,
                     "Coin Name": display_name,
                     "Designation": designation,
-                    "Grades": [{"Grade": g, "Count": c} for g, c in grade_counts]
+                    "Grades": [{"Grade": g, "Count": c} for g, c, _ in grade_counts]
                 })
 
         if not data.get("ShowNextPage"):
